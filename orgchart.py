@@ -15,6 +15,9 @@ FN = {  # key: (name aliases, IC titles, chief short, chief long)
  'Sup': (['Customer Support', 'Customer Success', 'Support'], ['Support Specialist', 'Customer Success Rep', 'Support Engineer', 'CS Associate'], None, None)}
 CITIES = ['Sydney', 'Melbourne', 'London', 'New York', 'Austin', 'Singapore', 'Berlin', 'Toronto', 'Mumbai']
 INDS = ['SaaS', 'Fintech', 'Healthcare', 'Retail', 'Manufacturing', 'Logistics', 'Media', 'Energy', 'Education']
+FIRST = ['Aarav','Emma','Liam','Priya','Noah','Sofia','Kenji','Olivia','Mateo','Aisha','Lucas','Mei','Ethan','Zara','Omar']
+LAST = ['Shah','Smith','Patel','Nguyen','Garcia','Kim','Brown','Singh','Muller','Chen','Jones','Khan','Rossi','Lopez','Taylor']
+DEPT = {'Eng':['Engineering','R&D','Tech','Eng'],'Data':['Data','Analytics','Data Science'],'Sec':['Security','InfoSec'],'Sales':['Sales','Revenue','BizDev'],'Mkt':['Marketing','Growth'],'Prod':['Product'],'Fin':['Finance','Accounting'],'HR':['People','HR'],'Ops':['Operations','Ops'],'Sup':['Customer Support','Customer Success','Support']}
 NA = ['Apex', 'Blue', 'Nova', 'Quantum', 'Iron', 'Bright', 'Delta', 'Lumen', 'Orbit', 'Vertex', 'Cedar', 'Summit']
 NB = ['Systems', 'Labs', 'Group', 'Works', 'Partners', 'Dynamics', 'Networks', 'Holdings', 'Health', 'Logic']
 
@@ -31,9 +34,11 @@ def title(f, l):
 
 def gen_company(ci):
     n = R.choice([100, 110, 120, 140, 160, 200, 250])
+    cname = f"{R.choice(NA)} {R.choice(NB)} {ci}"; dom = re.sub(r'[^a-z0-9]', '', cname.lower()) + '.com'
     cities = R.sample(CITIES, R.randint(1, 5)); P = []
     def add(f, l, m, loc, team=None):
-        P.append(dict(f=f, l=l, m=m, loc=loc, team=team)); return len(P) - 1
+        st = R.randint(0, 120) if m is None else (P[m]['s'] + R.randint(1, 90) if R.random() < .85 else R.randint(0, 230))
+        P.append(dict(f=f, l=l, m=m, loc=loc, team=team, s=min(st, 310))); return len(P) - 1
     pick = lambda xs: R.choice(xs)
     ceo = add(None, 0, None, cities[0]); P[0]['t'] = R.choice(['CEO', 'Chief Executive Officer', 'Founder & CEO'])
     funcs = ['Eng', 'Ops'] + R.sample([k for k in FN if k not in ('Eng', 'Ops')], R.randint(4, 8))
@@ -59,14 +64,19 @@ def gen_company(ci):
     for p in P:  # render messy fields
         p['t'] = p.get('t') or title(p['f'], p['l'])
         if R.random() < .03: p['loc'] = None
-    return dict(name=f"{pick(NA)} {pick(NB)} {ci}", ind=pick(INDS), P=P)
+        fn, ln = R.choice(FIRST), R.choice(LAST); p['name'] = f"{fn} {ln}"
+        p['email'] = '' if R.random() < .25 else R.choice([f"{fn}.{ln}", f"{fn[0]}{ln}", f"{fn}{ln[0]}"]).lower() + '@' + dom
+        d = R.choice(DEPT[p['f']]) if p['f'] else 'Executive'
+        p['dept'] = '' if R.random() < .2 else (R.choice(DEPT[R.choice(list(DEPT))]) if R.random() < .04 else d)
+        p['sd'] = '' if R.random() < .08 else f"{2000 + p['s'] // 12}-{p['s'] % 12 + 1:02d}"
+    return dict(name=cname, ind=pick(INDS), P=P)
 
 # ---------- 2. INFERENCE (no access to f/l/m truth fields) ----------
 PAT = [('Sec', r'secur|infosec|ciso|\bsoc\b|\bgrc\b'), ('Data', r'\bdata\b|analytics|\bbi\b|\bml\b|\bcdo\b'),
- ('Sup', r'support|customer|\bcs\b'), ('Sales', r'sales|revenue|account exec|\bsdr\b|\bbdr\b|business dev|solutions|\bcro\b'),
+ ('Sup', r'support|customer|\bcs\b'), ('Sales', r'sales|revenue|account exec|\bsdr\b|\bbdr\b|business dev|bizdev|solutions|\bcro\b'),
  ('Prod', r'product|\bux\b|\bcpo\b'), ('Mkt', r'market|growth|brand|content|\bseo\b|\bcmo\b'),
  ('Fin', r'financ|account|fp&a|\bap\b|\bcfo\b'), ('HR', r'people|\bhr\b|hrbp|human|recruit|talent|chro'),
- ('Ops', r'operations|\bops\b|logistic|procure|supply|\bcoo\b'), ('Eng', r'engineer|software|developer|devops|\bqa\b|technology|\beng\b|\bcto\b')]
+ ('Ops', r'operations|\bops\b|logistic|procure|supply|\bcoo\b'), ('Eng', r'engineer|software|developer|devops|\bqa\b|technology|\btech\b|r&d|\beng\b|\bcto\b')]
 def parse(t):
     s = t.lower()
     if not s: return None, None
@@ -81,7 +91,15 @@ def parse(t):
 PRIOR = {'Data': ('Eng', .6), 'Sec': ('Eng', .6), 'Sup': ('Ops', .7)}  # cross-function heads: weak priors
 
 def infer(P):
-    pr = [parse(p['t']) for p in P]; idx = collections.defaultdict(list)
+    sm = lambda p: int(p['sd'][:4]) * 12 + int(p['sd'][5:]) - 1 if p.get('sd') else None
+    pr = []; viaD = set()
+    for i, p in enumerate(P):  # title first; department is a fallback signal for the function
+        f, l = parse(p['t'])
+        if f is None and l not in (None, 0) and p.get('dept'):
+            f = parse(p['dept'])[0]
+            if f: viaD.add(i)
+        pr.append((f, l))
+    idx = collections.defaultdict(list)
     for i, (f, l) in enumerate(pr):
         if l is not None: idx[(f, l)].append(i)
     ceos = idx[(None, 0)]; out = []
@@ -99,8 +117,11 @@ def infer(P):
         if len(m) == 1: out.append((m[0], .92)); continue
         lc = [x for x in c if p['loc'] and P[x]['loc'] == p['loc']]
         pool, fac = (lc, .85) if lc else (c, .6)
+        if sm(p) is not None:  # managers usually start before their reports
+            e = [x for x in pool if sm(P[x]) is None or sm(P[x]) <= sm(p)]
+            pool = e or pool
         out.append((pool[0], round(fac / len(pool), 2)))
-    return out
+    return [(m, round(c * .8, 2) if i in viaD else c) for i, (m, c) in enumerate(out)]
 
 # ---------- 3. EVAL ----------
 def evaluate(cos):
@@ -118,8 +139,9 @@ def evaluate(cos):
 
 if __name__ == '__main__':
     cos = [gen_company(i) for i in range(500)]
-    for c in cos: c['I'] = infer(c['P'])
+    OBS = ('t', 'loc', 'team', 'dept', 'sd')  # inference sees observable fields only, never f/l/m
+    for c in cos: c['I'] = infer([{k: p[k] for k in OBS} for p in c['P']])
     M = evaluate(cos); print(json.dumps(M, indent=1)); json.dump(M, open('metrics.json', 'w'), indent=1)
-    D = dict(c=[dict(n=c['name'], i=c['ind'], p=[[p['t'], p['loc'] or '', I[0], int(I[1] * 100), p['m'] if p['m'] is not None else -1] for p, I in zip(c['P'], c['I'])] ) for c in cos])
+    D = dict(c=[dict(n=c['name'], i=c['ind'], p=[[p['t'], p['loc'] or '', I[0], int(I[1] * 100), p['m'] if p['m'] is not None else -1, p['name'], p['email'], p['dept'], p['sd']] for p, I in zip(c['P'], c['I'])] ) for c in cos])
     html = open('template.html').read().replace('__DATA__', json.dumps(D, separators=(',', ':'))).replace('__META__', json.dumps(M))
     open('index.html', 'w').write(html); print(len(html) / 1e6, 'MB')
