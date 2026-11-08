@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Org Chart Inference</title>
+<style>:root{--bg:#fff;--fg:#1c1c1e;--mu:#6b6b70;--ln:#d9d9de;--ok:#1a7f4b;--bad:#c4302b;--hi:#fff3b0;box-sizing:border-box;padding-top:env(safe-area-inset-top,0)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#17171a;--fg:#ececef;--mu:#9a9aa2;--ln:#34343a;--hi:#5a4d00}}
+body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif;max-width:1000px}
+.bar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px}select,input[type=text]{padding:6px;background:var(--bg);color:var(--fg);border:1px solid var(--ln);border-radius:6px}
+ul{list-style:none;margin:0;padding-left:18px;border-left:1px solid var(--ln)}summary{cursor:pointer}.c{font-size:11px;padding:1px 6px;border-radius:9px;border:1px solid var(--ln);color:var(--mu);margin-left:6px}
+.x{color:var(--bad);font-size:12px;margin-left:6px}.mark{background:var(--hi)}.mu{color:var(--mu)}h3{margin:16px 0 4px}#chain{min-height:20px;color:var(--mu)}</style></head><body>
+<h2 style="margin:0 0 8px">Org chart inference</h2>
+<div class="bar"><select id="co"></select><label>Min confidence <input type="range" id="th" min="0" max="99" value="70"> <b id="tv">70</b>%</label>
+<label><input type="checkbox" id="tr"> Show errors vs ground truth</label><input type="text" id="q" placeholder="Find title, e.g. data"></div>
+<div id="st" class="mu"></div><div id="chain">Click a person to see their reporting chain.</div><div id="o"></div>
+<h3>Global eval (500 companies)</h3><pre id="m" class="mu" style="white-space:pre-wrap;overflow-x:auto"></pre>
+<script>
+const D=__DATA__,M=__META__,$=i=>document.getElementById(i);
+D.c.forEach((c,i)=>$('co').add(new Option(`${c.n} · ${c.i} · ${c.p.length} people`,i)));
+$('m').textContent=Object.entries(M.by_threshold).map(([t,v])=>`conf>=${t}: precision ${v.precision}, coverage ${v.coverage}`).join('\n')+'\ncalibration (bucket: n, actual precision): '+JSON.stringify(M.calibration);
+let kids,c,thr,tr,q,P;
+function nd(i){const x=P[i],k=kids[i]||[],bad=tr&&x[2]>=0&&x[2]!=x[4],m=q&&x[0].toLowerCase().includes(q);
+ const lab=`<span class="${m?'mark':''}">${x[0]||'(no title)'}</span> <span class="mu">${x[1]}</span>`+(x[2]>=0&&i? `<span class="c">${x[3]}%</span>`:'')+(bad?`<span class="x">✗ true mgr: ${P[x[4]]?.[0]||'?'}</span>`:'');
+ const h=k.length?`<details ${(q||i==0)?'open':''}><summary onclick="ch(${i})">${lab} <span class="mu">(${k.length})</span></summary><ul>${k.map(j=>`<li>${nd(j)}</li>`).join('')}</ul></details>`:`<span onclick="ch(${i})" style="cursor:pointer">${lab}</span>`;return h}
+function ch(i){let s=[],j=i,g=0;while(j>=0&&g++<20){s.push(P[j][0]||'?');j=(P[j][2]>=0&&P[j][3]>=thr)?P[j][2]:-1}$('chain').textContent=s.join(' → ')}
+function go(){c=D.c[$('co').value];P=c.p;thr=+$('th').value;$('tv').textContent=thr;tr=$('tr').checked;q=$('q').value.toLowerCase();kids={};const un=[];let e=0,ok=0;
+ P.forEach((x,i)=>{if(i&&x[2]>=0&&x[3]>=thr){(kids[x[2]]??=[]).push(i);e++;ok+=x[2]==x[4]}else if(i)un.push(i)});
+ const ur=un.filter(i=>true);$('st').textContent=`${e} of ${P.length-1} reporting lines shown, ${ur.length} unresolved (abstained or below threshold). Precision vs ground truth in this company: ${e?(100*ok/e).toFixed(1):'-'}%`;
+ $('o').innerHTML=`<ul style="border:0;padding:0"><li>${nd(0)}</li></ul><h3>Unresolved manager (${ur.length}) — each shown with their own subtree</h3><ul style="border:0;padding:0">${ur.slice(0,300).map(i=>`<li>${nd(i)}</li>`).join('')}</ul>`}
+['co','th','tr','q'].forEach(i=>$(i).addEventListener('input',go));go();
+</script></body></html>
