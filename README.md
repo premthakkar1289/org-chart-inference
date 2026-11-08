@@ -37,4 +37,4 @@ Adding department and start date lifted coverage at 0.7 from 66.9% to 72.6% for 
 python orgchart.py        # regenerates data, metrics.json and index.html (stdlib only, Python 3.8+)
 cp index.html docs/index.html
 ```
-Live app: <PASTE YOUR DEPLOYED LINK HERE>
+Live app: <https://premthakkar1289.github.io/org-chart-inference/>
